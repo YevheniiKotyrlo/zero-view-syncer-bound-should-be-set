@@ -6,20 +6,24 @@
   "type": "module",
   "scripts": {
     "setup": "docker compose down -v && docker compose up -d --wait && bun scripts/seed.ts",
-    "seed": "bun scripts/seed.ts",
-    "leg": "bun scripts/run-leg.ts",
     "demo": "bun scripts/demo.ts",
+    "test": "bun test --timeout 1500000",
+    "leg": "bun scripts/run-leg.ts",
+    "bug:empty-window": "bun scripts/bug.ts empty-window",
+    "bug:crash": "bun scripts/bug.ts crash",
+    "bug:reverse-drop": "bun scripts/bug.ts reverse-drop",
     "patch:none": "bun scripts/toggle-patch.mjs none",
     "patch:take-only": "bun scripts/toggle-patch.mjs take-only",
+    "patch:zqlite-only": "bun scripts/toggle-patch.mjs zqlite-only",
     "patch:both": "bun scripts/toggle-patch.mjs both"
   },
   "dependencies": {
-    "@rocicorp/zero": "1.5.0",
-    "postgres": "3.4.7"
+    "@rocicorp/zero": "1.6.2",
+    "postgres": "3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^6.0.2"
+    "@types/node": "^24.10.1",
+    "typescript": "^6.0.3"
   },
   "trustedDependencies": [
     "@rocicorp/zero-sqlite3",

@@ -3,6 +3,8 @@ name: Reproduce
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
 
 jobs:
@@ -23,12 +25,12 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run the three-leg demo
-        # The demo exits non-zero unless ALL legs behave as documented:
-        # stock hydrates an empty window and dies with "Bound should be set",
-        # take-only survives and surfaces the update as an add, both hydrates
-        # the correct page and applies the update live.
-        run: bun run demo
+      - name: Run the e2e matrix as tests
+        # tests/repro.test.ts runs the four-leg matrix (stock / take-only /
+        # zqlite-only / both) and asserts every per-bug expectation: all
+        # three bugs visible on stock, each fixed by its own patch in
+        # isolation, the non-NULL sanity window identical on every build.
+        run: bun test --timeout 1500000
 
       - name: Upload leg artifacts
         if: always()

@@ -7,18 +7,21 @@ import postgres from 'postgres';
 
 import {QUERY_URL, UPSTREAM_DB, ZERO_PORT, ZERO_SERVER} from './env.ts';
 
-// Runs ONE leg of the demo against whatever @rocicorp/zero build is
-// currently installed (select with scripts/toggle-patch.mjs):
+// Runs ONE leg against whatever @rocicorp/zero build is currently installed
+// (select with scripts/toggle-patch.mjs):
 //
 //   1. reset the world — fresh Postgres (docker compose down -v / up), seed,
 //      deploy the repro's permissions
-//   2. start zero-cache (capturing its log)
-//   3. start a real Zero client that registers the cursor query anchored on
-//      a NULL-sorted row (its page should hold item-3..6)
+//   2. start the synced-query server and zero-cache (capturing its log)
+//   3. start a real Zero client registering three synced queries:
+//      forward (cursor after the NULL-sorted item-2 — should hold 4 rows),
+//      reverse (backward walk after item-5 — should hold 4 rows including
+//      the NULL group), and sanity (cursor after the non-NULL item-4 —
+//      should hold 2 rows on every build)
 //   4. UPDATE a non-sort column of item-5 — a row whose old and new
-//      positions both sort past the cursor bound
-//   5. verdicts: what did the window hydrate to, did the update reach the
-//      client, and did the view-syncer die with "Bound should be set"?
+//      positions both sort past the forward cursor bound
+//   5. record what each window hydrated to, whether the update reached the
+//      client, and whether the view-syncer died with "Bound should be set"
 const leg = process.argv[2];
 if (!leg) {
   console.error('Usage: bun scripts/run-leg.ts <leg-name>');
@@ -134,35 +137,54 @@ const waitForReady = async (): Promise<void> => {
 await waitForReady();
 console.log(`[${leg}] zero-cache ready; starting the client…`);
 
+// One client process per probe: a Zero client evaluates queries over its
+// whole local store, so a shared client would paper over the forward
+// window's wrong emptiness with rows synced for the other probes. Separate
+// clients are separate client GROUPS — which also shows the crash's blast
+// radius: only the group owning the poisoned query dies.
 interface WindowReport {
   type: 'window';
-  count: number;
+  probe: 'forward' | 'reverse' | 'sanity';
   names: string[];
 }
-const windowReports: WindowReport[] = [];
-spawnChild('client', 'bun', ['scripts/client.ts'], line => {
-  try {
-    const parsed = JSON.parse(line) as WindowReport;
-    if (parsed.type === 'window') {
-      windowReports.push(parsed);
-      console.log(`[${leg}] client window: ${parsed.count} rows`);
-      return;
+const PROBES = ['forward', 'reverse', 'sanity'] as const;
+const reportsByProbe: Record<string, WindowReport[]> = {
+  forward: [],
+  reverse: [],
+  sanity: [],
+};
+for (const probe of PROBES) {
+  spawnChild(`client-${probe}`, 'bun', ['scripts/client.ts', probe], line => {
+    try {
+      const parsed = JSON.parse(line) as WindowReport;
+      if (parsed.type === 'window') {
+        reportsByProbe[parsed.probe].push(parsed);
+        console.log(
+          `[${leg}] ${parsed.probe} window: ${parsed.names.length} rows`,
+        );
+        return;
+      }
+    } catch {
+      /* not a JSON report — fall through to logging */
     }
-  } catch {
-    /* not a JSON report — fall through to logging */
-  }
-  console.log(`[${leg}] client: ${line}`);
-});
+    console.log(`[${leg}] client-${probe}: ${line}`);
+  });
+}
 
-// Let the query register + hydrate + settle.
+// Let every probe register + hydrate + settle.
 const hydrateDeadline = Date.now() + 30_000;
-while (windowReports.length === 0 && Date.now() < hydrateDeadline) {
+while (
+  PROBES.some(probe => reportsByProbe[probe].length === 0) &&
+  Date.now() < hydrateDeadline
+) {
   await sleep(250);
 }
-await sleep(2_000);
-const initialWindow = windowReports.at(-1)?.count ?? -1;
+await sleep(2_500);
+const initial = Object.fromEntries(
+  PROBES.map(probe => [probe, reportsByProbe[probe].at(-1)]),
+);
 
-console.log(`[${leg}] updating item-5 (sorts past the cursor bound)…`);
+console.log(`[${leg}] updating item-5 (sorts past the forward cursor)…`);
 const sql = postgres(UPSTREAM_DB, {max: 1});
 await sql`UPDATE item SET name = ${UPDATED_NAME} WHERE id = 'item-5'`;
 await sql.end();
@@ -170,12 +192,17 @@ await sql.end();
 // Give replication + the pipelines time to react (or crash).
 await sleep(8_000);
 
-const finalReport = windowReports.at(-1);
+const final = Object.fromEntries(
+  PROBES.map(probe => [probe, reportsByProbe[probe].at(-1)]),
+);
 const result = {
   leg,
-  initialWindow,
-  finalWindow: finalReport?.count ?? -1,
-  updateReachedClient: finalReport?.names.includes(UPDATED_NAME) ?? false,
+  forwardInitial: initial.forward?.names.length ?? -1,
+  reverseInitial: initial.reverse?.names.length ?? -1,
+  sanityInitial: initial.sanity?.names.length ?? -1,
+  forwardFinal: final.forward?.names.length ?? -1,
+  forwardGotUpdate: final.forward?.names.includes(UPDATED_NAME) ?? false,
+  sanityGotUpdate: final.sanity?.names.includes(UPDATED_NAME) ?? false,
   serverAssertFired: zeroCacheLog.includes(ASSERT_MESSAGE),
 };
 writeFileSync(`.tmp/result-${leg}.json`, JSON.stringify(result, null, 2));

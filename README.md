@@ -1,51 +1,62 @@
-# zero-cache view-syncer dies with "Bound should be set" on a cursor query whose page hydrated empty
+# zero-cache: NULL cursor bounds break sliding windows, and a forwarded edit kills the view-syncer with "Bound should be set"
 
-A synced `UPDATE` can kill the `@rocicorp/zero` view-syncer — every client in
-the group is disconnected with
-`{"kind":"Internal","message":"Bound should be set","origin":"zeroCache"}` —
-when it reaches a cursor-paginated query whose current page is empty. Two
-stock defects chain to get there:
+[![Reproduce](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml/badge.svg)](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml)
 
-1. **A NULL-valued cursor bound compiles into start constraints that never
-   match** (`packages/zqlite/src/query-builder.ts` +
-   `packages/zero-cache/src/types/lite.ts`). SQLite sorts NULLs first, but
-   `.start(row)` with a NULL sort value compiles to `col > NULL` /
-   `col = NULL` — never true — because the replica's column specs drop the
-   `|NOT_NULL` attribute, leaving the null-safe branches dead. The "next
-   page" silently returns nothing: the view-syncer hydrates an **empty
-   window while rows past the bound exist**.
-2. **The IVM `Take` operator's edit branch is the only change branch that
-   does not tolerate an empty window**
-   (`packages/zql/src/ivm/take.ts`). `Skip` (the `.start()` cursor) forwards
-   an edit whenever the old and new rows both sort past its bound — per the
-   in-memory comparator, which handles NULLs correctly and therefore
-   disagrees with the SQL above. The forwarded edit hits
-   `assert(takeState.bound, 'Bound should be set')` and the view-syncer dies.
+> **Green badge = reproduced, not "bug-free".** The CI runs the full
+> stock-vs-patched matrix and asserts *both* that stock shows all three bugs
+> **and** that each fix resolves its bug with no regressions — so green means
+> the comparison is valid and the fixes work. It does not go red while the
+> bugs exist.
 
-Both defects are live from `@rocicorp/zero@1.5.0` (this repro's pin) through
-`1.6.2` (latest at the time of writing) and on `rocicorp/mono@main` — the two
-affected sources are byte-identical across all three.
+Three related defects in `@rocicorp/zero`'s server-side cursor pagination
+(`.start(row)` + `.limit(n)` — the sliding-window shape), live in `1.6.2`
+(latest at the time of writing) and byte-identical on `rocicorp/mono@main`:
+
+1. **A NULL cursor bound hydrates an empty window.**
+   `packages/zqlite/src/query-builder.ts` compiles a `.start()` bound row
+   with a NULL sort value into `col > NULL` / `col = NULL` — never true — so
+   the cursor walk silently restarts as empty. The null-safe branches exist
+   but are dead: the replica's column specs
+   (`packages/zero-cache/src/types/lite.ts`) drop the `|NOT_NULL` attribute
+   they're gated on, and they mis-handle a NULL bound anyway.
+2. **A synced UPDATE then kills the view-syncer.** The IVM `Skip` operator
+   (the cursor) forwards an edit whenever the old and new rows both sort past
+   its bound — judged by the in-memory comparator, which handles NULLs
+   correctly and therefore disagrees with the SQL above. The forwarded edit
+   lands on the empty `Take` (the limit), whose edit branch is the only
+   change branch that does not tolerate an empty window:
+   `assert(takeState.bound, 'Bound should be set')` throws, and the
+   view-syncer kills the whole client group with an Internal
+   `ProtocolError` — every tab of that client disconnects.
+3. **A backward walk below a non-NULL bound drops the NULL group.** SQLite
+   sorts NULLs first, so the strictly-before set of any non-NULL bound
+   includes every NULL-sorted row — but the compiled `col < ?` excludes
+   them. Reverse pagination silently loses the whole NULL-valued head of the
+   list.
 
 ## What this is
 
-A real `@rocicorp/zero@1.5.0` stack — Postgres 17 (Docker) → zero-cache → a
-real `Zero` client (in-memory kv store) — driven through one choreography,
-three times:
+A real `@rocicorp/zero@1.6.2` stack — Postgres 17 (Docker) → zero-cache → a
+synced-query API server → real `Zero` clients (in-memory kv store, **legacy
+ad-hoc queries disabled** — the clients assert it) — driven through one
+choreography, four times. Three probes, each its own client (its own client
+group): `forward` (the page after a NULL-sorted anchor, should hold 4 rows),
+`reverse` (the backward walk below a non-NULL anchor, should hold 4 rows
+including the NULL group), `sanity` (the page after a non-NULL anchor — the
+regression guard, 2 rows on every build). Then one
+`UPDATE item SET name = … WHERE id = 'item-5'` — a row past the forward
+cursor.
 
-1. seed six rows; three have a NULL `shelf` (the first sort key)
-2. the client registers `item.orderBy('shelf').orderBy('id').start({id: 'item-2', shelf: null}).limit(5)`
-   — the page strictly after a NULL-sorted row, which should hold 4 rows
-3. `UPDATE item SET name = … WHERE id = 'item-5'` — a row whose old and new
-   positions both sort past the cursor bound
+| Leg | Build | forward | reverse | sanity | After the UPDATE |
+| --- | --- | ---: | ---: | ---: | --- |
+| `stock` | unpatched | **0** (bug 1) | **1** (bug 3) | 2 | **view-syncer dies: `Bound should be set`** (bug 2); the sanity group keeps syncing — the blast radius is the poisoned group |
+| `take-only` | Take fix | 0 → **1** | 1 | 2 | survives; the row surfaces as an add |
+| `zqlite-only` | NULL-bound fix | **4** | **4** | 2 | lands live as an edit (the crash precondition is gone) |
+| `both` | all fixes | **4** | **4** | 2 | lands live; nothing crashes |
 
-| Leg | Build | Window hydrates | After the UPDATE |
-| --- | --- | --- | --- |
-| `stock` | unpatched 1.5.0 | **0 rows** (defect 1) | **view-syncer dies: `Bound should be set`** (defect 2) |
-| `take-only` | Take fix only | 0 rows (defect 1 still) | survives; the row surfaces as an add (0 → 1) |
-| `both` | Take fix + NULL-bound fix | **4 rows** (correct) | the update lands live in the window |
-
-The verdict reads zero-cache's own log for the assert and the client's
-materialized view for the window contents — both machine-checked.
+The verdicts read zero-cache's own log for the assert and each client's
+materialized view for the window contents — all machine-checked, in
+`bun test` form (`tests/repro.test.ts`) and as a narrated demo.
 
 ## Quick start
 
@@ -53,37 +64,48 @@ Requires [Bun](https://bun.sh), Docker (Compose v2), Node 22+:
 
 ```bash
 bun install
-bun run demo    # runs all three legs (each resets the sandbox), prints the verdict
+bun run demo        # the full four-leg matrix + verdict (also: bun test)
 ```
 
-Expected output (abridged from a real run):
-
-```text
-================= SUMMARY =================
-stock      window 0 -> 0 | update reached client: false | "Bound should be set": true
-take-only  window 0 -> 1 | update reached client: true | "Bound should be set": false
-both       window 4 -> 4 | update reached client: true | "Bound should be set": false
-
-================= VERDICT =================
-PASS  stock: cursor window hydrates EMPTY (NULL-bound defect)
-PASS  stock: view-syncer dies with "Bound should be set"
-PASS  take-only: view-syncer survives the update
-PASS  take-only: updated row surfaces as an add (0 -> 1)
-PASS  both: cursor window hydrates the 4 rows past the bound
-PASS  both: update lands live in the window
-
-Reproduction confirmed: stock crashes + hydrates empty; the fixes restore both.
-```
-
-Or step through one leg at a time:
+Each bug is individually reproducible against stock:
 
 ```bash
-bun run patch:none        # or patch:take-only / patch:both
-bun run leg stock         # resets the sandbox, runs the choreography, writes .tmp/result-stock.json
+bun run bug:empty-window   # bug 1 — forward window hydrates 0 rows (4 exist)
+bun run bug:crash          # bug 2 — "Bound should be set" kills the group
+bun run bug:reverse-drop   # bug 3 — reverse walk returns 1 row instead of 4
 ```
 
-`.tmp/zero-cache-<leg>.log` holds each leg's zero-cache log — the stock leg's
-contains the full `Bound should be set` stack:
+Expected `demo` output (abridged from a real run):
+
+```text
+=========================== SUMMARY ===========================
+stock        forward 0 -> 0 | reverse 1 | sanity 2 | update fwd/sanity: false/true | "Bound should be set": true
+take-only    forward 0 -> 1 | reverse 1 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
+zqlite-only  forward 4 -> 4 | reverse 4 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
+both         forward 4 -> 4 | reverse 4 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
+
+=========================== VERDICT ===========================
+PASS  bug 1 (stock): forward window after the NULL-sorted anchor hydrates EMPTY
+PASS  bug 1 (fixed by the zqlite patch alone): forward window hydrates the 4 rows
+PASS  bug 2 (stock): view-syncer dies with "Bound should be set"
+PASS  bug 2 (stock): the update never reaches the dead forward group
+PASS  bug 2 (stock): the blast radius is the poisoned group — sanity still receives the update
+PASS  bug 2 (fixed by the take patch alone): view-syncer survives the update
+PASS  bug 2 (fixed by the take patch alone): the row surfaces as an add (0 -> 1)
+PASS  bug 3 (stock): reverse window drops the NULL group (1 row instead of 4)
+PASS  bug 3 (fixed by the zqlite patch alone): reverse window holds all 4 rows
+PASS  both: forward window hydrates the 4 rows past the bound
+PASS  both: reverse window holds all 4 rows
+PASS  both: the update lands live with no crash
+PASS  sanity: non-NULL-anchored window holds 2 rows on EVERY build
+PASS  sanity: the update reaches the sanity window on EVERY build
+PASS  sanity: no patched build crashes
+
+Reproduction confirmed: all three bugs visible on stock, each fixed by its patch, no regressions.
+```
+
+`.tmp/zero-cache-<leg>.log` holds each leg's zero-cache log — the stock
+leg's contains the full stack:
 
 ```text
 Error: Bound should be set
@@ -94,17 +116,28 @@ Error: Bound should be set
     at Skip.push (out/zql/src/ivm/skip.js:58:11)
 ```
 
+Or drive one leg by hand:
+
+```bash
+bun run patch:none          # or patch:take-only / patch:zqlite-only / patch:both
+bun run leg stock           # resets the sandbox, runs the choreography, writes .tmp/result-stock.json
+```
+
 ## The fixes
 
-The two patch files under `patches/` are minimal builds of the proposed
-upstream fixes (against the published 1.5.0 bundle; the affected sources are
-unchanged through 1.6.2 and `main`):
+The patch files under `patches/` are minimal builds of the proposed upstream
+fixes (against the published 1.6.2 bundle; the affected sources are
+byte-identical on `main`):
 
 - `patches/take-only.patch` — `Take.#pushEditChange` treats an empty window
   like the add-, remove-, and child-change branches already do: the new row
   surfaces as an add (the window has room — `size 0 < limit`).
-- `patches/both.patch` — additionally compiles NULL cursor bounds into
-  null-safe start constraints (after a NULL bound = `IS NOT NULL`; before it
-  = `FALSE`; tie-break equality = `IS`).
+- `patches/zqlite-only.patch` — start-constraint compilation branches on the
+  runtime bound value (after a NULL bound = `IS NOT NULL`; before it =
+  `FALSE`; tie-break equality = `IS`), and the replica's column specs derive
+  `optional` from the `|NOT_NULL` attribute they already record — which
+  activates the existing nullable-column guard for backward walks. Non-NULL
+  bounds on non-nullable columns keep today's index-friendly forms.
+- `patches/both.patch` — both of the above.
 
 Upstream PRs: TAKE_PR_LINK · NULL_PR_LINK

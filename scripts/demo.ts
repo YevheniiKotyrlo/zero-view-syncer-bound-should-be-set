@@ -1,66 +1,102 @@
 import {execSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 
-// Runs the three legs back to back and prints the comparison:
+// Runs the four legs back to back and checks the full expectation matrix —
+// each bug visible on stock, fixed by its own patch in isolation, everything
+// correct with both patches, and the non-NULL sanity probe identical on
+// every build (no regressions). Each probe runs as its own client (its own
+// client group), so the crash's blast radius is visible too: on stock, only
+// the group owning the poisoned forward query dies — the sanity group keeps
+// syncing and still receives the update.
 //
-//   stock     — the cursor window hydrates EMPTY (defect 1) and the UPDATE
-//               kills the view-syncer with "Bound should be set" (defect 2)
-//   take-only — the window still hydrates empty, but the view-syncer
-//               survives and surfaces the updated row as an add
-//   both      — the window hydrates correctly AND the update lands live
-interface LegResult {
+//                forward  reverse  sanity  crash  update reaches forward / sanity
+//   stock          0        1        2     YES    no  / yes
+//   take-only      0 -> 1   1        2     no     yes / yes
+//   zqlite-only    4        4        2     no     yes / yes
+//   both           4        4        2     no     yes / yes
+export interface LegResult {
   leg: string;
-  initialWindow: number;
-  finalWindow: number;
-  updateReachedClient: boolean;
+  forwardInitial: number;
+  reverseInitial: number;
+  sanityInitial: number;
+  forwardFinal: number;
+  forwardGotUpdate: boolean;
+  sanityGotUpdate: boolean;
   serverAssertFired: boolean;
 }
 
-const LEGS = [
+export const LEGS = [
   {variant: 'none', leg: 'stock'},
   {variant: 'take-only', leg: 'take-only'},
+  {variant: 'zqlite-only', leg: 'zqlite-only'},
   {variant: 'both', leg: 'both'},
 ] as const;
 
-const results: LegResult[] = [];
-for (const {variant, leg} of LEGS) {
-  console.log(`\n=== LEG: ${leg} (variant: ${variant}) ===`);
-  execSync(`bun scripts/toggle-patch.mjs ${variant}`, {stdio: 'inherit'});
-  execSync(`bun scripts/run-leg.ts ${leg}`, {stdio: 'inherit'});
-  results.push(JSON.parse(readFileSync(`.tmp/result-${leg}.json`, 'utf8')));
-}
+export const collectLegResults = (): LegResult[] => {
+  const results: LegResult[] = [];
+  for (const {variant, leg} of LEGS) {
+    console.log(`\n=== LEG: ${leg} (variant: ${variant}) ===`);
+    execSync(`bun scripts/toggle-patch.mjs ${variant}`, {stdio: 'inherit'});
+    execSync(`bun scripts/run-leg.ts ${leg}`, {stdio: 'inherit'});
+    results.push(JSON.parse(readFileSync(`.tmp/result-${leg}.json`, 'utf8')));
+  }
+  // Restore the committed (stock) install state.
+  execSync('bun scripts/toggle-patch.mjs none', {stdio: 'pipe'});
+  return results;
+};
 
-// Restore the committed (stock) install state.
-execSync('bun scripts/toggle-patch.mjs none', {stdio: 'pipe'});
+export const buildExpectations = (
+  results: LegResult[],
+): [string, boolean][] => {
+  const [stock, takeOnly, zqliteOnly, both] = results;
+  return [
+    // Bug 1 — a NULL cursor bound hydrates an empty forward window.
+    ['bug 1 (stock): forward window after the NULL-sorted anchor hydrates EMPTY', stock.forwardInitial === 0],
+    ['bug 1 (fixed by the zqlite patch alone): forward window hydrates the 4 rows', zqliteOnly.forwardInitial === 4],
+    // Bug 2 — the forwarded edit kills the view-syncer on an empty window.
+    ['bug 2 (stock): view-syncer dies with "Bound should be set"', stock.serverAssertFired],
+    ['bug 2 (stock): the update never reaches the dead forward group', !stock.forwardGotUpdate],
+    ['bug 2 (stock): the blast radius is the poisoned group — sanity still receives the update', stock.sanityGotUpdate],
+    ['bug 2 (fixed by the take patch alone): view-syncer survives the update', !takeOnly.serverAssertFired],
+    ['bug 2 (fixed by the take patch alone): the row surfaces as an add (0 -> 1)', takeOnly.forwardInitial === 0 && takeOnly.forwardFinal === 1 && takeOnly.forwardGotUpdate],
+    // Bug 3 — a backward walk below a non-NULL bound drops the NULL group.
+    ['bug 3 (stock): reverse window drops the NULL group (1 row instead of 4)', stock.reverseInitial === 1],
+    ['bug 3 (fixed by the zqlite patch alone): reverse window holds all 4 rows', zqliteOnly.reverseInitial === 4],
+    // Both patches together — everything correct.
+    ['both: forward window hydrates the 4 rows past the bound', both.forwardInitial === 4],
+    ['both: reverse window holds all 4 rows', both.reverseInitial === 4],
+    ['both: the update lands live with no crash', both.forwardGotUpdate && !both.serverAssertFired],
+    // Regression sanity — the non-NULL anchor behaves identically everywhere.
+    ['sanity: non-NULL-anchored window holds 2 rows on EVERY build', results.every(result => result.sanityInitial === 2)],
+    ['sanity: the update reaches the sanity window on EVERY build', results.every(result => result.sanityGotUpdate)],
+    ['sanity: no patched build crashes', !takeOnly.serverAssertFired && !zqliteOnly.serverAssertFired && !both.serverAssertFired],
+  ];
+};
 
-const [stock, takeOnly, both] = results;
-console.log('\n================= SUMMARY =================');
-for (const result of results) {
+if (import.meta.main) {
+  const results = collectLegResults();
+
+  console.log('\n=========================== SUMMARY ===========================');
+  for (const result of results) {
+    console.log(
+      `${result.leg.padEnd(12)} forward ${String(result.forwardInitial)} -> ${String(result.forwardFinal)}` +
+        ` | reverse ${String(result.reverseInitial)} | sanity ${String(result.sanityInitial)}` +
+        ` | update fwd/sanity: ${String(result.forwardGotUpdate)}/${String(result.sanityGotUpdate)}` +
+        ` | "Bound should be set": ${String(result.serverAssertFired)}`,
+    );
+  }
+
+  const expectations = buildExpectations(results);
+  let reproduced = true;
+  console.log('\n=========================== VERDICT ===========================');
+  for (const [label, passed] of expectations) {
+    console.log(`${passed ? 'PASS' : 'FAIL'}  ${label}`);
+    reproduced &&= passed;
+  }
   console.log(
-    `${result.leg.padEnd(10)} window ${String(result.initialWindow)} -> ${String(result.finalWindow)}` +
-      ` | update reached client: ${String(result.updateReachedClient)}` +
-      ` | "Bound should be set": ${String(result.serverAssertFired)}`,
+    reproduced
+      ? '\nReproduction confirmed: all three bugs visible on stock, each fixed by its patch, no regressions.'
+      : '\nReproduction did NOT match expectations — inspect .tmp/result-*.json and .tmp/zero-cache-*.log.',
   );
+  process.exit(reproduced ? 0 : 1);
 }
-
-const expectations: [string, boolean][] = [
-  ['stock: cursor window hydrates EMPTY (NULL-bound defect)', stock.initialWindow === 0],
-  ['stock: view-syncer dies with "Bound should be set"', stock.serverAssertFired],
-  ['take-only: view-syncer survives the update', !takeOnly.serverAssertFired],
-  ['take-only: updated row surfaces as an add (0 -> 1)', takeOnly.finalWindow === 1 && takeOnly.updateReachedClient],
-  ['both: cursor window hydrates the 4 rows past the bound', both.initialWindow === 4],
-  ['both: update lands live in the window', both.updateReachedClient && !both.serverAssertFired],
-];
-
-let reproduced = true;
-console.log('\n================= VERDICT =================');
-for (const [label, passed] of expectations) {
-  console.log(`${passed ? 'PASS' : 'FAIL'}  ${label}`);
-  reproduced &&= passed;
-}
-console.log(
-  reproduced
-    ? '\nReproduction confirmed: stock crashes + hydrates empty; the fixes restore both.'
-    : '\nReproduction did NOT match expectations — inspect .tmp/result-*.json and .tmp/zero-cache-*.log.',
-);
-process.exit(reproduced ? 0 : 1);

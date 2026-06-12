@@ -1,5 +1,5 @@
 diff --git a/out/zql/src/ivm/take.js b/out/zql/src/ivm/take.js
-index c3b489c5bd79e86074b781beb61232529aa87605..ba1b6ee648fdbb3c7cdabc9ddea53e65edf4e5ad 100644
+index 2b26f0d8f0a6da8f6cffc2e62b3c24be2c9196fa..f1ccca7e1ce4d0572757c33030c78f8c9d584566 100644
 --- a/out/zql/src/ivm/take.js
 +++ b/out/zql/src/ivm/take.js
 @@ -237,7 +237,17 @@ var Take = class {

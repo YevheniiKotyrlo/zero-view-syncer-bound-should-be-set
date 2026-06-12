@@ -1,6 +1,3 @@
-diff --git a/node_modules/@rocicorp/zero/.bun-tag-7116ac47bb2e85d4 b/.bun-tag-7116ac47bb2e85d4
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/out/zero-cache/src/types/lite.js b/out/zero-cache/src/types/lite.js
 index 8e7e06e59fcbe6019f3602b2530db726e8c81d11..18b2e5b6eaf2c8b416e36b19bbbbe8fcc9b3fe38 100644
 --- a/out/zero-cache/src/types/lite.js
@@ -17,29 +14,6 @@ index 8e7e06e59fcbe6019f3602b2530db726e8c81d11..18b2e5b6eaf2c8b416e36b19bbbbe8fc
  }
  function mapLiteDataTypeToZqlValueType(dataType) {
  	const type = liteTypeToZqlValueType(dataType);
-diff --git a/out/zql/src/ivm/take.js b/out/zql/src/ivm/take.js
-index 2b26f0d8f0a6da8f6cffc2e62b3c24be2c9196fa..f1ccca7e1ce4d0572757c33030c78f8c9d584566 100644
---- a/out/zql/src/ivm/take.js
-+++ b/out/zql/src/ivm/take.js
-@@ -237,7 +237,17 @@ var Take = class {
- 		assert(!this.#partitionKeyComparator || this.#partitionKeyComparator(change[2].row, change[1].row) === 0, "Unexpected change of partition key");
- 		const { takeState, takeStateKey, maxBound, constraint } = this.#getStateAndConstraint(change[2].row);
- 		if (!takeState) return;
--		assert(takeState.bound, "Bound should be set");
-+		if (takeState.bound === void 0) {
-+			// The take window is empty (size 0). A Skip (a `.start()` cursor)
-+			// forwards an edit whenever the old and new rows both sort past its
-+			// bound, and an input can deliver such an edit while this take holds
-+			// no rows. The add-, remove-, and child-change branches all tolerate
-+			// an undefined bound; the edit branch must too. The window has room
-+			// (size 0 < limit), so surface the new row as an add.
-+			this.#setTakeState(takeStateKey, takeState.size + 1, change[1].row, maxBound);
-+			yield* this.#output.push(makeAddChange(change[1]), this);
-+			return;
-+		}
- 		const { compareRows } = this.getSchema();
- 		const oldCmp = compareRows(change[2].row, takeState.bound);
- 		const newCmp = compareRows(change[1].row, takeState.bound);
 diff --git a/out/zqlite/src/query-builder.js b/out/zqlite/src/query-builder.js
 index e4905fa2e1cfce11f3f9aada2f7f44c713d65ad4..c406abe8e07622ebaa5147f0071da92fe1112408 100644
 --- a/out/zqlite/src/query-builder.js
