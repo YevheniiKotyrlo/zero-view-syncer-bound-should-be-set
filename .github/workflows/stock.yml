@@ -1,0 +1,43 @@
+name: stock — expected failing
+
+# The RED light. Runs the correct-behavior spec against the STOCK
+# @rocicorp/zero build: the three bug tests fail (that is the point), while
+# the harness-sanity test passes — red here means "the bugs are present",
+# not "the reproduction is broken". The same spec is green in fixed.yml.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies (stock — no patches)
+        run: bun install
+
+      - name: Correct-behavior tests against the stock build (the three bugs fail here)
+        run: bun run test:current-build
+
+      - name: Upload leg artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-leg
+          include-hidden-files: true
+          path: |
+            .tmp/result-*.json
+            .tmp/zero-cache-*.log

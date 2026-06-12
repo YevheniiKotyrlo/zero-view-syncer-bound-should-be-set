@@ -1,5 +1,8 @@
-name: Reproduce
+name: fix-isolation matrix
 
+# The deep verdict: all four install variants (stock / take-only /
+# zqlite-only / both), proving each fix resolves exactly its bug with no
+# regressions. The glanceable red/green pair lives in stock.yml + fixed.yml.
 on:
   push:
     branches: [main]

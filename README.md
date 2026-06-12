@@ -1,12 +1,15 @@
 # zero-cache: NULL cursor bounds break sliding windows, and a forwarded edit kills the view-syncer with "Bound should be set"
 
-[![Reproduce](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml/badge.svg)](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml)
+[![stock — expected failing](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/stock.yml/badge.svg)](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/stock.yml)
+[![fixed — all tests passing](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/fixed.yml/badge.svg)](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/fixed.yml)
+[![fix-isolation matrix](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml/badge.svg)](https://github.com/YevheniiKotyrlo/zero-view-syncer-bound-should-be-set/actions/workflows/reproduce.yml)
 
-> **Green badge = reproduced, not "bug-free".** The CI runs the full
-> stock-vs-patched matrix and asserts *both* that stock shows all three bugs
-> **and** that each fix resolves its bug with no regressions — so green means
-> the comparison is valid and the fixes work. It does not go red while the
-> bugs exist.
+> **How to read the lights.** The same four-test correct-behavior spec runs
+> twice: against the **stock** build it is RED — the three bug-named tests
+> fail while the harness-sanity test passes, so red means "the bugs are
+> present", not "the repro is broken" — and against the **fixed** build it
+> is GREEN. The third badge is the deep verdict: all four install variants,
+> proving each fix resolves exactly its bug with no regressions.
 
 Three related defects in `@rocicorp/zero`'s server-side cursor pagination
 (`.start(row)` + `.limit(n)` — the sliding-window shape), live in `1.6.2`
@@ -64,7 +67,14 @@ Requires [Bun](https://bun.sh), Docker (Compose v2), Node 22+:
 
 ```bash
 bun install
-bun run demo        # the full four-leg matrix + verdict (also: bun test)
+bun run demo        # the full four-leg matrix + verdict (also: bun run test)
+```
+
+The red/green pair, locally:
+
+```bash
+bun run patch:none && bun run test:current-build   # RED — the three bug tests fail on stock
+bun run patch:both && bun run test:current-build   # GREEN — the same tests pass when fixed
 ```
 
 Each bug is individually reproducible against stock:

@@ -1,0 +1,41 @@
+name: fixed — all tests passing
+
+# The GREEN light. Applies both proposed fixes and runs the exact same
+# correct-behavior spec that fails in stock.yml: all four tests pass.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  fixed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies with both fixes applied
+        run: bun scripts/toggle-patch.mjs both
+
+      - name: Correct-behavior tests against the fixed build (everything passes)
+        run: bun run test:current-build
+
+      - name: Upload leg artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-leg
+          include-hidden-files: true
+          path: |
+            .tmp/result-*.json
+            .tmp/zero-cache-*.log

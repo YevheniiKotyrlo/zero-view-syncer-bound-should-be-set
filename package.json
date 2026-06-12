@@ -7,7 +7,7 @@
   "scripts": {
     "setup": "docker compose down -v && docker compose up -d --wait && bun scripts/seed.ts",
     "demo": "bun scripts/demo.ts",
-    "test": "bun test --timeout 1500000",
+    "test": "bun test tests/repro.test.ts --timeout 1500000",
     "leg": "bun scripts/run-leg.ts",
     "bug:empty-window": "bun scripts/bug.ts empty-window",
     "bug:crash": "bun scripts/bug.ts crash",
@@ -15,7 +15,8 @@
     "patch:none": "bun scripts/toggle-patch.mjs none",
     "patch:take-only": "bun scripts/toggle-patch.mjs take-only",
     "patch:zqlite-only": "bun scripts/toggle-patch.mjs zqlite-only",
-    "patch:both": "bun scripts/toggle-patch.mjs both"
+    "patch:both": "bun scripts/toggle-patch.mjs both",
+    "test:current-build": "bun test tests/correct-behavior.test.ts --timeout 600000"
   },
   "dependencies": {
     "@rocicorp/zero": "1.6.2",
