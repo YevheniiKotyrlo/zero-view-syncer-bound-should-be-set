@@ -1,0 +1,23 @@
+diff --git a/out/zql/src/ivm/take.js b/out/zql/src/ivm/take.js
+index c3b489c5bd79e86074b781beb61232529aa87605..ba1b6ee648fdbb3c7cdabc9ddea53e65edf4e5ad 100644
+--- a/out/zql/src/ivm/take.js
++++ b/out/zql/src/ivm/take.js
+@@ -237,7 +237,17 @@ var Take = class {
+ 		assert(!this.#partitionKeyComparator || this.#partitionKeyComparator(change[2].row, change[1].row) === 0, "Unexpected change of partition key");
+ 		const { takeState, takeStateKey, maxBound, constraint } = this.#getStateAndConstraint(change[2].row);
+ 		if (!takeState) return;
+-		assert(takeState.bound, "Bound should be set");
++		if (takeState.bound === void 0) {
++			// The take window is empty (size 0). A Skip (a `.start()` cursor)
++			// forwards an edit whenever the old and new rows both sort past its
++			// bound, and an input can deliver such an edit while this take holds
++			// no rows. The add-, remove-, and child-change branches all tolerate
++			// an undefined bound; the edit branch must too. The window has room
++			// (size 0 < limit), so surface the new row as an add.
++			this.#setTakeState(takeStateKey, takeState.size + 1, change[1].row, maxBound);
++			yield* this.#output.push(makeAddChange(change[1]), this);
++			return;
++		}
+ 		const { compareRows } = this.getSchema();
+ 		const oldCmp = compareRows(change[2].row, takeState.bound);
+ 		const newCmp = compareRows(change[1].row, takeState.bound);

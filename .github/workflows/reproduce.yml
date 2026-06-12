@@ -1,0 +1,40 @@
+name: Reproduce
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run the three-leg demo
+        # The demo exits non-zero unless ALL legs behave as documented:
+        # stock hydrates an empty window and dies with "Bound should be set",
+        # take-only survives and surfaces the update as an add, both hydrates
+        # the correct page and applies the update live.
+        run: bun run demo
+
+      - name: Upload leg artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leg-results
+          path: |
+            .tmp/result-*.json
+            .tmp/zero-cache-*.log

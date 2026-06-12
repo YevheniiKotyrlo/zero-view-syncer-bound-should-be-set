@@ -1,0 +1,29 @@
+{
+  "name": "zero-view-syncer-bound-should-be-set",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reproduction: @rocicorp/zero view-syncer dies with \"Bound should be set\" when a synced UPDATE reaches a cursor query whose page hydrated empty (NULL-valued cursor bound)",
+  "type": "module",
+  "scripts": {
+    "setup": "docker compose down -v && docker compose up -d --wait && bun scripts/seed.ts",
+    "seed": "bun scripts/seed.ts",
+    "leg": "bun scripts/run-leg.ts",
+    "demo": "bun scripts/demo.ts",
+    "patch:none": "bun scripts/toggle-patch.mjs none",
+    "patch:take-only": "bun scripts/toggle-patch.mjs take-only",
+    "patch:both": "bun scripts/toggle-patch.mjs both"
+  },
+  "dependencies": {
+    "@rocicorp/zero": "1.5.0",
+    "postgres": "3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^6.0.2"
+  },
+  "trustedDependencies": [
+    "@rocicorp/zero-sqlite3",
+    "esbuild",
+    "protobufjs"
+  ]
+}
