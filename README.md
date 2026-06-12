@@ -11,9 +11,12 @@
 > is GREEN. The third badge is the deep verdict: all four install variants,
 > proving each fix resolves exactly its bug with no regressions.
 
-Three related defects in `@rocicorp/zero`'s server-side cursor pagination
-(`.start(row)` + `.limit(n)` — the sliding-window shape), live in `1.6.2`
-(latest at the time of writing) and byte-identical on `rocicorp/mono@main`:
+Three related defects in `@rocicorp/zero`'s cursor pagination
+(`.start(row)` + `.limit(n)` — the sliding-window shape), all manifesting in
+the zero-cache view-syncer. Live in `1.6.2` (latest at the time of writing);
+on `rocicorp/mono@main` every affected function is unchanged (the only drift
+in the affected files since `v1.6.2` is unrelated `LIKE`-handling churn in
+`query-builder.ts`):
 
 1. **A NULL cursor bound hydrates an empty window.**
    `packages/zqlite/src/query-builder.ts` compiles a `.start()` bound row
@@ -138,8 +141,8 @@ bun run leg stock           # resets the sandbox, runs the choreography, writes 
 ## The fixes
 
 The patch files under `patches/` are minimal builds of the proposed upstream
-fixes (against the published 1.6.2 bundle; the affected sources are
-byte-identical on `main`):
+fixes (against the published 1.6.2 bundle; the affected functions are
+unchanged on `main`):
 
 - `patches/take-only.patch` — `Take.#pushEditChange` treats an empty window
   like the add-, remove-, and child-change branches already do: the new row

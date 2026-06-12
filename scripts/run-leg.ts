@@ -62,7 +62,8 @@ const spawnChild = (
       ['ZERO_LOG_LEVEL']: 'info',
       ['ZERO_ADMIN_PASSWORD']: 'repro-admin',
       // The default (one syncer per core) overruns the upstream connection
-      // budget on many-core machines; two is plenty for one client.
+      // budget on many-core machines; two is plenty for this repro's three
+      // clients.
       ['ZERO_NUM_SYNC_WORKERS']: '2',
       // The synced-query transform endpoint (scripts/query-server.ts).
       ['ZERO_QUERY_URL']: ports.queryUrl,
@@ -154,7 +155,7 @@ const waitForReady = async (): Promise<void> => {
   );
 };
 await waitForReady();
-console.log(`[${leg}] zero-cache ready; starting the client…`);
+console.log(`[${leg}] zero-cache ready; starting the clients…`);
 
 // One client process per probe: a Zero client evaluates queries over its
 // whole local store, so a shared client would paper over the forward
