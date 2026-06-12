@@ -33,7 +33,9 @@ jobs:
         # zqlite-only / both) and asserts every per-bug expectation: all
         # three bugs visible on stock, each fixed by its own patch in
         # isolation, the non-NULL sanity window identical on every build.
-        run: bun test --timeout 1500000
+        # (`bun run test` targets the matrix spec only — the red/green
+        # correct-behavior spec belongs to stock.yml / fixed.yml.)
+        run: bun run test
 
       - name: Upload leg artifacts
         if: always()
