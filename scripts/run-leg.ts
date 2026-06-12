@@ -139,10 +139,12 @@ const waitForReady = async (): Promise<void> => {
     await sleep(500);
   }
   // Persist + surface whatever zero-cache said so a failed boot is
-  // diagnosable straight from the console (CI included).
+  // diagnosable straight from the console (CI included), and tear the leg's
+  // own children down — leaked workers would EADDRINUSE every later leg.
   writeFileSync(zeroCacheLogFile, zeroCacheLog);
   console.log(`[${leg}] zero-cache log tail:`);
   console.log(zeroCacheLog.split('\n').slice(-40).join('\n'));
+  stopChildren();
   throw new Error(
     `zero-cache did not become ready within 90s — see ${zeroCacheLogFile}`,
   );
