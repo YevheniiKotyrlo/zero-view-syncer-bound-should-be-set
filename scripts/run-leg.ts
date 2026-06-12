@@ -67,6 +67,11 @@ const spawnChild = (
       ['ZERO_QUERY_URL']: QUERY_URL,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    // POSIX: make each child its own process group so the whole tree can be
+    // killed — zero-cache forks workers (dispatcher, change-streamer,
+    // syncers) that would otherwise survive as orphans holding their ports
+    // and EADDRINUSE the next leg.
+    detached: process.platform !== 'win32',
   });
   children.push(child);
   for (const stream of [child.stdout, child.stderr]) {
@@ -86,15 +91,20 @@ const spawnChild = (
 const stopChildren = (): void => {
   for (const child of children) {
     if (child.pid !== undefined && child.exitCode === null) {
-      // zero-cache forks workers; kill the whole tree on Windows.
+      // Kill the whole tree: zero-cache forks workers that hold the ports.
       try {
         if (process.platform === 'win32') {
           execSync(`taskkill /PID ${child.pid} /T /F`, {stdio: 'pipe'});
         } else {
-          child.kill('SIGKILL');
+          // Negative pid = the process group (children spawn detached).
+          process.kill(-child.pid, 'SIGKILL');
         }
       } catch {
-        /* already gone */
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* already gone */
+        }
       }
     }
   }
