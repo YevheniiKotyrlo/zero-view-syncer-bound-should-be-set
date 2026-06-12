@@ -19,9 +19,11 @@ Three related defects in `@rocicorp/zero`'s server-side cursor pagination
    `packages/zqlite/src/query-builder.ts` compiles a `.start()` bound row
    with a NULL sort value into `col > NULL` / `col = NULL` — never true — so
    the cursor walk silently restarts as empty. The null-safe branches exist
-   but are dead: the replica's column specs
+   but are dead for replica tables: the replica's column specs
    (`packages/zero-cache/src/types/lite.ts`) drop the `|NOT_NULL` attribute
-   they're gated on, and they mis-handle a NULL bound anyway.
+   they're gated on — and even where the gate engages, a NULL bound compiles
+   to over-matching SQL that only stays correct by being trimmed row-by-row,
+   degrading the cursor into a scan from the top.
 2. **A synced UPDATE then kills the view-syncer.** The IVM `Skip` operator
    (the cursor) forwards an edit whenever the old and new rows both sort past
    its bound — judged by the in-memory comparator, which handles NULLs
