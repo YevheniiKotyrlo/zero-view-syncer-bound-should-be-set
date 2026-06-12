@@ -2,7 +2,9 @@ import {Zero} from '@rocicorp/zero';
 
 import {queries} from '../queries.ts';
 import {schema} from '../schema.ts';
-import {ZERO_SERVER} from './env.ts';
+
+// The zero-cache endpoint comes from the leg's port block (scripts/env.ts).
+const ZERO_SERVER = process.env['REPRO_ZERO_SERVER'] ?? 'http://127.0.0.1:4990';
 
 // A real Zero client (in-memory kv store — no IndexedDB needed) registering
 // ONE synced query, selected by argv. Each probe runs as its own client so

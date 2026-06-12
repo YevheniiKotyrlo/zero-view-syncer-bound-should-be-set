@@ -5,7 +5,7 @@ import {setTimeout as sleep} from 'node:timers/promises';
 
 import postgres from 'postgres';
 
-import {QUERY_URL, UPSTREAM_DB, ZERO_PORT, ZERO_SERVER} from './env.ts';
+import {computeLegPorts, UPSTREAM_DB} from './env.ts';
 
 // Runs ONE leg against whatever @rocicorp/zero build is currently installed
 // (select with scripts/toggle-patch.mjs):
@@ -30,6 +30,7 @@ if (!leg) {
 
 const ASSERT_MESSAGE = 'Bound should be set';
 const UPDATED_NAME = 'shelved b (updated)';
+const ports = computeLegPorts(leg);
 mkdirSync('.tmp', {recursive: true});
 const zeroCacheLogFile = resolve(`.tmp/zero-cache-${leg}.log`);
 const replicaFile = resolve(`.tmp/replica-${leg}.db`);
@@ -57,14 +58,17 @@ const spawnChild = (
       ...process.env,
       ['ZERO_UPSTREAM_DB']: UPSTREAM_DB,
       ['ZERO_REPLICA_FILE']: replicaFile,
-      ['ZERO_PORT']: String(ZERO_PORT),
+      ['ZERO_PORT']: String(ports.zeroPort),
       ['ZERO_LOG_LEVEL']: 'info',
       ['ZERO_ADMIN_PASSWORD']: 'repro-admin',
       // The default (one syncer per core) overruns the upstream connection
       // budget on many-core machines; two is plenty for one client.
       ['ZERO_NUM_SYNC_WORKERS']: '2',
       // The synced-query transform endpoint (scripts/query-server.ts).
-      ['ZERO_QUERY_URL']: QUERY_URL,
+      ['ZERO_QUERY_URL']: ports.queryUrl,
+      // The leg's port block, for the query server and the clients.
+      ['REPRO_QUERY_PORT']: String(ports.queryPort),
+      ['REPRO_ZERO_SERVER']: ports.zeroServer,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     // POSIX: make each child its own process group so the whole tree can be
@@ -129,7 +133,7 @@ const waitForReady = async (): Promise<void> => {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${ZERO_SERVER}/keepalive`);
+      const response = await fetch(`${ports.zeroServer}/keepalive`);
       if (response.ok) {
         return;
       }
