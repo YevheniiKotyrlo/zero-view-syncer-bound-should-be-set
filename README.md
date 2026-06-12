@@ -155,4 +155,4 @@ unchanged on `main`):
   bounds on non-nullable columns keep today's index-friendly forms.
 - `patches/both.patch` — both of the above.
 
-Upstream PRs: TAKE_PR_LINK · NULL_PR_LINK
+Upstream PRs: [rocicorp/mono#6122](https://github.com/rocicorp/mono/pull/6122) (Take empty-window edit) · [rocicorp/mono#6121](https://github.com/rocicorp/mono/pull/6121) (NULL-bound start constraints)
