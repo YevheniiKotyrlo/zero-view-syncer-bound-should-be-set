@@ -37,6 +37,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: leg-results
+          # The artifacts live under .tmp/, which upload-artifact treats as
+          # hidden and skips by default.
+          include-hidden-files: true
           path: |
             .tmp/result-*.json
             .tmp/zero-cache-*.log

@@ -128,8 +128,11 @@ const waitForReady = async (): Promise<void> => {
     }
     await sleep(500);
   }
-  // Persist whatever zero-cache said so a failed boot is diagnosable.
+  // Persist + surface whatever zero-cache said so a failed boot is
+  // diagnosable straight from the console (CI included).
   writeFileSync(zeroCacheLogFile, zeroCacheLog);
+  console.log(`[${leg}] zero-cache log tail:`);
+  console.log(zeroCacheLog.split('\n').slice(-40).join('\n'));
   throw new Error(
     `zero-cache did not become ready within 90s — see ${zeroCacheLogFile}`,
   );
