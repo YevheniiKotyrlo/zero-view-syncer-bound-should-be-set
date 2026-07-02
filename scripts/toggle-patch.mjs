@@ -12,7 +12,7 @@ import {resolve} from 'node:path';
 //                 crash precondition disappears with them)
 //   both        — all fixes together
 const PACKAGE_JSON = resolve('package.json');
-const ZERO_VERSION = '1.6.2';
+const ZERO_VERSION = '1.7.0';
 const VARIANTS = {
   'none': undefined,
   'take-only': {[`@rocicorp/zero@${ZERO_VERSION}`]: 'patches/take-only.patch'},

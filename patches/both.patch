@@ -1,6 +1,3 @@
-diff --git a/node_modules/@rocicorp/zero/.bun-tag-7116ac47bb2e85d4 b/.bun-tag-7116ac47bb2e85d4
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/out/zero-cache/src/types/lite.js b/out/zero-cache/src/types/lite.js
 index 8e7e06e59fcbe6019f3602b2530db726e8c81d11..18b2e5b6eaf2c8b416e36b19bbbbe8fcc9b3fe38 100644
 --- a/out/zero-cache/src/types/lite.js
@@ -41,10 +38,10 @@ index 2b26f0d8f0a6da8f6cffc2e62b3c24be2c9196fa..f1ccca7e1ce4d0572757c33030c78f8c
  		const oldCmp = compareRows(change[2].row, takeState.bound);
  		const newCmp = compareRows(change[1].row, takeState.bound);
 diff --git a/out/zqlite/src/query-builder.js b/out/zqlite/src/query-builder.js
-index e4905fa2e1cfce11f3f9aada2f7f44c713d65ad4..c406abe8e07622ebaa5147f0071da92fe1112408 100644
+index 407eb1c9b662d3b990e488392fd1bc6d0b2e7aad..1b4c6045a75dfbf9467bb421e7af980030345751 100644
 --- a/out/zqlite/src/query-builder.js
 +++ b/out/zqlite/src/query-builder.js
-@@ -94,9 +94,18 @@ function toSQLiteType(v, type) {
+@@ -105,9 +105,18 @@ function toSQLiteType(v, type) {
  	}
  }
  function nullableAwareEquality(field, value, columnType) {

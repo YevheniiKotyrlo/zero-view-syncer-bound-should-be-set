@@ -15,10 +15,10 @@ index 8e7e06e59fcbe6019f3602b2530db726e8c81d11..18b2e5b6eaf2c8b416e36b19bbbbe8fc
  function mapLiteDataTypeToZqlValueType(dataType) {
  	const type = liteTypeToZqlValueType(dataType);
 diff --git a/out/zqlite/src/query-builder.js b/out/zqlite/src/query-builder.js
-index e4905fa2e1cfce11f3f9aada2f7f44c713d65ad4..c406abe8e07622ebaa5147f0071da92fe1112408 100644
+index 407eb1c9b662d3b990e488392fd1bc6d0b2e7aad..1b4c6045a75dfbf9467bb421e7af980030345751 100644
 --- a/out/zqlite/src/query-builder.js
 +++ b/out/zqlite/src/query-builder.js
-@@ -94,9 +94,18 @@ function toSQLiteType(v, type) {
+@@ -105,9 +105,18 @@ function toSQLiteType(v, type) {
  	}
  }
  function nullableAwareEquality(field, value, columnType) {

@@ -19,7 +19,7 @@
     "test:current-build": "bun test tests/correct-behavior.test.ts --timeout 600000"
   },
   "dependencies": {
-    "@rocicorp/zero": "1.6.2",
+    "@rocicorp/zero": "1.7.0",
     "postgres": "3.4.9"
   },
   "devDependencies": {

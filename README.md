@@ -13,10 +13,27 @@
 
 Three related defects in `@rocicorp/zero`'s cursor pagination
 (`.start(row)` + `.limit(n)` — the sliding-window shape), all manifesting in
-the zero-cache view-syncer. Live in `1.6.2` (latest at the time of writing);
-on `rocicorp/mono@main` every affected function is unchanged (the only drift
-in the affected files since `v1.6.2` is unrelated `LIKE`-handling churn in
-`query-builder.ts`):
+the zero-cache view-syncer. Live in `1.7.0` (latest at the time of writing;
+first reported and reproduced against `1.6.2`, re-verified on `1.7.0`
+2026-07-02); on `rocicorp/mono@main` every affected function is unchanged
+(the only drift in the affected files across `v1.6.2` → `v1.7.0` → `main` is
+unrelated `LIKE`-handling churn in `query-builder.ts`, plus #6184's sargable
+leading bound, which is gated on the same absent `optional` metadata and so
+compiles a NULL leading bound to the equally-never-true `col >= NULL`).
+
+Note the schema here declares the sort column nullable (`shelf:
+string().optional()` in `schema.ts`) — there is no app-schema drift in this
+reproduction. The specs the view-syncer's pipeline actually uses are
+replica-introspected, and `mapLiteDataTypeToZqlSchemaValue` drops the
+`|NOT_NULL` attribute, so every replica column reads as non-optional
+server-side no matter what the app schema says.
+
+Upstream fixes: [rocicorp/mono#6121](https://github.com/rocicorp/mono/pull/6121)
+(the NULL-bound start-constraint compilation + the replica `optional`
+derivation — bugs 1 and 3, and the crash precondition) and
+[rocicorp/mono#6122](https://github.com/rocicorp/mono/pull/6122) (the `Take`
+operator tolerating an empty window — bug 2). Maintainer-confirmed
+reproduction on 2026-07-02 in the #6122 thread.
 
 1. **A NULL cursor bound hydrates an empty window.**
    `packages/zqlite/src/query-builder.ts` compiles a `.start()` bound row
@@ -44,7 +61,7 @@ in the affected files since `v1.6.2` is unrelated `LIKE`-handling churn in
 
 ## What this is
 
-A real `@rocicorp/zero@1.6.2` stack — Postgres 17 (Docker) → zero-cache → a
+A real `@rocicorp/zero@1.7.0` stack — Postgres 17 (Docker) → zero-cache → a
 synced-query API server → real `Zero` clients (in-memory kv store, **legacy
 ad-hoc queries disabled** — the clients assert it) — driven through one
 choreography, four times. Three probes, each its own client (its own client
@@ -141,7 +158,7 @@ bun run leg stock           # resets the sandbox, runs the choreography, writes 
 ## The fixes
 
 The patch files under `patches/` are minimal builds of the proposed upstream
-fixes (against the published 1.6.2 bundle; the affected functions are
+fixes (against the published 1.7.0 bundle; the affected functions are
 unchanged on `main`):
 
 - `patches/take-only.patch` — `Take.#pushEditChange` treats an empty window
