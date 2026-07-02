@@ -1,7 +1,7 @@
 import {execSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 
-// Runs the four legs back to back and checks the full expectation matrix —
+// Runs the five legs back to back and checks the full expectation matrix —
 // each bug visible on stock, fixed by its own patch in isolation, everything
 // correct with both patches, and the non-NULL sanity probe identical on
 // every build (no regressions). Each probe runs as its own client (its own
