@@ -12,6 +12,7 @@ import {readFileSync} from 'node:fs';
 //                forward  reverse  sanity  crash  update reaches forward / sanity
 //   stock          0        1        2     YES    no  / yes
 //   take-only      0 -> 1   1        2     no     yes / yes
+//   fail-closed    0        1        2     no     no  / yes
 //   zqlite-only    4        4        2     no     yes / yes
 //   both           4        4        2     no     yes / yes
 export interface LegResult {
@@ -28,6 +29,7 @@ export interface LegResult {
 export const LEGS = [
   {variant: 'none', leg: 'stock'},
   {variant: 'take-only', leg: 'take-only'},
+  {variant: 'fail-closed', leg: 'fail-closed'},
   {variant: 'zqlite-only', leg: 'zqlite-only'},
   {variant: 'both', leg: 'both'},
 ] as const;
@@ -48,7 +50,7 @@ export const collectLegResults = (): LegResult[] => {
 export const buildExpectations = (
   results: LegResult[],
 ): [string, boolean][] => {
-  const [stock, takeOnly, zqliteOnly, both] = results;
+  const [stock, takeOnly, failClosed, zqliteOnly, both] = results;
   return [
     // Bug 1 — a NULL cursor bound hydrates an empty forward window.
     ['bug 1 (stock): forward window after the NULL-sorted anchor hydrates EMPTY', stock.forwardInitial === 0],
@@ -59,6 +61,10 @@ export const buildExpectations = (
     ['bug 2 (stock): the blast radius is the poisoned group — sanity still receives the update', stock.sanityGotUpdate],
     ['bug 2 (fixed by the take patch alone): view-syncer survives the update', !takeOnly.serverAssertFired],
     ['bug 2 (fixed by the take patch alone): the row surfaces as an add (0 -> 1)', takeOnly.forwardInitial === 0 && takeOnly.forwardFinal === 1 && takeOnly.forwardGotUpdate],
+    // The fail-closed take candidate (rocicorp/mono#6188) — no crash, but the
+    // edit is silently dropped and the empty window stays empty.
+    ['fail-closed candidate: view-syncer survives the update', !failClosed.serverAssertFired],
+    ['fail-closed candidate: the edit is dropped — the forward window stays empty', !failClosed.forwardGotUpdate && failClosed.forwardFinal === 0],
     // Bug 3 — a backward walk below a non-NULL bound drops the NULL group.
     ['bug 3 (stock): reverse window drops the NULL group (1 row instead of 4)', stock.reverseInitial === 1],
     ['bug 3 (fixed by the zqlite patch alone): reverse window holds all 4 rows', zqliteOnly.reverseInitial === 4],
@@ -69,7 +75,7 @@ export const buildExpectations = (
     // Regression sanity — the non-NULL anchor behaves identically everywhere.
     ['sanity: non-NULL-anchored window holds 2 rows on EVERY build', results.every(result => result.sanityInitial === 2)],
     ['sanity: the update reaches the sanity window on EVERY build', results.every(result => result.sanityGotUpdate)],
-    ['sanity: no patched build crashes', !takeOnly.serverAssertFired && !zqliteOnly.serverAssertFired && !both.serverAssertFired],
+    ['sanity: no patched build crashes', !takeOnly.serverAssertFired && !failClosed.serverAssertFired && !zqliteOnly.serverAssertFired && !both.serverAssertFired],
   ];
 };
 

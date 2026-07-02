@@ -8,7 +8,7 @@
 > twice: against the **stock** build it is RED — the three bug-named tests
 > fail while the harness-sanity test passes, so red means "the bugs are
 > present", not "the repro is broken" — and against the **fixed** build it
-> is GREEN. The third badge is the deep verdict: all four install variants,
+> is GREEN. The third badge is the deep verdict: all five install variants,
 > proving each fix resolves exactly its bug with no regressions.
 
 Three related defects in `@rocicorp/zero`'s cursor pagination
@@ -64,7 +64,7 @@ reproduction on 2026-07-02 in the #6122 thread.
 A real `@rocicorp/zero@1.7.0` stack — Postgres 17 (Docker) → zero-cache → a
 synced-query API server → real `Zero` clients (in-memory kv store, **legacy
 ad-hoc queries disabled** — the clients assert it) — driven through one
-choreography, four times. Three probes, each its own client (its own client
+choreography, five times. Three probes, each its own client (its own client
 group): `forward` (the page after a NULL-sorted anchor, should hold 4 rows),
 `reverse` (the backward walk below a non-NULL anchor, should hold 4 rows
 including the NULL group), `sanity` (the page after a non-NULL anchor — the
@@ -76,6 +76,7 @@ cursor.
 | --- | --- | ---: | ---: | ---: | --- |
 | `stock` | unpatched | **0** (bug 1) | **1** (bug 3) | 2 | **view-syncer dies: `Bound should be set`** (bug 2); the sanity group keeps syncing — the blast radius is the poisoned group |
 | `take-only` | Take fix | 0 → **1** | 1 | 2 | survives; the row surfaces as an add |
+| `fail-closed` | Take fail-closed candidate ([#6188](https://github.com/rocicorp/mono/pull/6188)) | 0 | 1 | 2 | survives; the edit is **silently dropped** — the window stays empty |
 | `zqlite-only` | NULL-bound fix | **4** | **4** | 2 | lands live as an edit (the crash precondition is gone) |
 | `both` | all fixes | **4** | **4** | 2 | lands live; nothing crashes |
 
@@ -89,7 +90,7 @@ Requires [Bun](https://bun.sh), Docker (Compose v2), Node 22+:
 
 ```bash
 bun install
-bun run demo        # the full four-leg matrix + verdict (also: bun run test)
+bun run demo        # the full five-leg matrix + verdict (also: bun run test)
 ```
 
 The red/green pair, locally:
@@ -113,6 +114,7 @@ Expected `demo` output (abridged from a real run):
 =========================== SUMMARY ===========================
 stock        forward 0 -> 0 | reverse 1 | sanity 2 | update fwd/sanity: false/true | "Bound should be set": true
 take-only    forward 0 -> 1 | reverse 1 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
+fail-closed  forward 0 -> 0 | reverse 1 | sanity 2 | update fwd/sanity: false/true | "Bound should be set": false
 zqlite-only  forward 4 -> 4 | reverse 4 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
 both         forward 4 -> 4 | reverse 4 | sanity 2 | update fwd/sanity: true/true | "Bound should be set": false
 
@@ -124,6 +126,8 @@ PASS  bug 2 (stock): the update never reaches the dead forward group
 PASS  bug 2 (stock): the blast radius is the poisoned group — sanity still receives the update
 PASS  bug 2 (fixed by the take patch alone): view-syncer survives the update
 PASS  bug 2 (fixed by the take patch alone): the row surfaces as an add (0 -> 1)
+PASS  fail-closed candidate: view-syncer survives the update
+PASS  fail-closed candidate: the edit is dropped — the forward window stays empty
 PASS  bug 3 (stock): reverse window drops the NULL group (1 row instead of 4)
 PASS  bug 3 (fixed by the zqlite patch alone): reverse window holds all 4 rows
 PASS  both: forward window hydrates the 4 rows past the bound
@@ -151,7 +155,7 @@ Error: Bound should be set
 Or drive one leg by hand:
 
 ```bash
-bun run patch:none          # or patch:take-only / patch:zqlite-only / patch:both
+bun run patch:none          # or patch:take-only / patch:fail-closed / patch:zqlite-only / patch:both
 bun run leg stock           # resets the sandbox, runs the choreography, writes .tmp/result-stock.json
 ```
 

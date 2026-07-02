@@ -7,7 +7,7 @@ import {
 } from '../scripts/demo.ts';
 
 // The e2e proof, as a test suite. Collecting the leg results runs the full
-// four-leg matrix (each leg resets the Docker sandbox, boots zero-cache and
+// five-leg matrix (each leg resets the Docker sandbox, boots zero-cache and
 // the query server, drives a real client, applies the UPDATE) — several
 // minutes; the per-bug tests below then assert against the recorded results.
 const results: LegResult[] = collectLegResults();
@@ -52,6 +52,17 @@ describe('each fix resolves its bug in isolation', () => {
     expect(zqliteOnly.forwardInitial).toBe(4);
     expect(zqliteOnly.reverseInitial).toBe(4);
     expect(zqliteOnly.serverAssertFired).toBe(false);
+  });
+});
+
+describe('the fail-closed take candidate (rocicorp/mono#6188)', () => {
+  test('survives the update but drops it silently — the forward window stays empty', () => {
+    const failClosed = byLeg('fail-closed');
+    expect(failClosed.serverAssertFired).toBe(false);
+    expect(failClosed.forwardInitial).toBe(0);
+    expect(failClosed.forwardFinal).toBe(0);
+    expect(failClosed.forwardGotUpdate).toBe(false);
+    expect(failClosed.sanityGotUpdate).toBe(true);
   });
 });
 

@@ -1,0 +1,15 @@
+diff --git a/out/zql/src/ivm/take.js b/out/zql/src/ivm/take.js
+index 2b26f0d8f0a6da8f6cffc2e62b3c24be2c9196fa..307f7912dcd0ad73be4d31b59dacc9ceccec8714 100644
+--- a/out/zql/src/ivm/take.js
++++ b/out/zql/src/ivm/take.js
+@@ -237,7 +237,9 @@ var Take = class {
+ 		assert(!this.#partitionKeyComparator || this.#partitionKeyComparator(change[2].row, change[1].row) === 0, "Unexpected change of partition key");
+ 		const { takeState, takeStateKey, maxBound, constraint } = this.#getStateAndConstraint(change[2].row);
+ 		if (!takeState) return;
+-		assert(takeState.bound, "Bound should be set");
++		// The fail-closed candidate (rocicorp/mono#6188): drop the edit rather
++		// than fabricating a row a fresh (broken) fetch would not return.
++		if (takeState.bound === void 0) return;
+ 		const { compareRows } = this.getSchema();
+ 		const oldCmp = compareRows(change[2].row, takeState.bound);
+ 		const newCmp = compareRows(change[1].row, takeState.bound);

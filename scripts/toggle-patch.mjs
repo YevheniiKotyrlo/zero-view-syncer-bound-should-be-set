@@ -7,6 +7,8 @@ import {resolve} from 'node:path';
 //   none        — stock (all three bugs visible)
 //   take-only   — only the Take operator fix (the crash is gone; both cursor
 //                 windows still hydrate wrong)
+//   fail-closed — the fail-closed take candidate (rocicorp/mono#6188): the
+//                 crash is gone, the edit is dropped, windows stay wrong
 //   zqlite-only — only the NULL-bound start-constraint fix + the replica
 //                 optional derivation (both windows hydrate correctly; the
 //                 crash precondition disappears with them)
@@ -16,6 +18,9 @@ const ZERO_VERSION = '1.7.0';
 const VARIANTS = {
   'none': undefined,
   'take-only': {[`@rocicorp/zero@${ZERO_VERSION}`]: 'patches/take-only.patch'},
+  'fail-closed': {
+    [`@rocicorp/zero@${ZERO_VERSION}`]: 'patches/fail-closed.patch',
+  },
   'zqlite-only': {
     [`@rocicorp/zero@${ZERO_VERSION}`]: 'patches/zqlite-only.patch',
   },
